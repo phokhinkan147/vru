@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบติดตามรถราง - มรภ.วไลยอลงกรณ์ (VRU Tram Tracker)</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Sarabun', sans-serif;
+        }
+        body, html {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #header h1 {
+            font-size: 1.1rem;
+            color: #2c3e50;
+        }
+        #header p {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 1;
+        }
+        .btn-gps {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-gps:hover {
+            background-color: #219150;
+        }
+        .btn-gps.active {
+            background-color: #e74c3c;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+            padding: 5px;
+        }
+        .popup-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        .popup-desc {
+            font-size: 0.85rem;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <div>
+            <h1>ระบบเส้นทางรถราง VRU Tram</h1>
+            <p>มหาวิทยาลัยราชภัฏวไลยอลงกรณ์ ในพระบรมราชูปถัมภ์</p>
+        </div>
+        <button id="gpsBtn" class="btn-gps" onclick="toggleGPS()">
+            <span>📍 ติดตาม GPS ของฉัน</span>
+        </button>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // ================= 1. ข้อมูลการตั้งค่า (CONFIGURATION DATA) =================
+        const ROUTE = [
+            [14.132864, 100.610135],
+            [14.133007, 100.60753],
+            [14.134427, 100.607606],
+            [14.134484, 100.608837],
+            [14.134625, 100.609199],
+            [14.134625, 100.61227],
+            [14.13436, 100.612415],
+            [14.134365, 100.61775],
+            [14.132568, 100.617742],
+            [14.13256, 100.61238],
+            [14.134357, 100.612393],
+            [14.134628, 100.612267],
+            [14.134615, 100.609193],
+            [14.134474, 100.608829],
+            [14.134419, 100.607608],
+            [14.133012, 100.607536],
+            [14.132859, 100.61013]
+        ];
+
+        const STOPS = [
+            {"id": 1, "name": "จุดจอดที่ 1: ประตูหน้า มรภ.วไลยอลงกรณ์", "lat": 14.134373, "lng": 100.615, "desc": "เชื่อมต่อป้ายรถเมล์ถนนพหลโยธิน"},
+            {"id": 2, "name": "จุดจอดที่ 2: อาคารเรียนรวม 1", "lat": 14.132851, "lng": 100.612321, "desc": "ใกล้อาคารเรียน 75 ปี"},
+            {"id": 3, "name": "จุดจอดที่ 3: หอปรัชญา / วงเวียนกลาง", "lat": 14.132528, "lng": 100.616741, "desc": "จุดเปลี่ยนสายรถราง"},
+            {"id": 4, "name": "จุดจอดที่ 4: ศูนย์อาหารกลาง & หอพัก", "lat": 14.132505, "lng": 100.615033, "desc": "ศูนย์อาหารนักศึกษา"},
+            {"id": 5, "name": "จุดจอดที่ 5: อาคารกิจกรรม & กีฬา", "lat": 14.132515, "lng": 100.613938, "desc": "สนามกีฬากลาง"},
+            {"id": 6, "name": "จุดจอดที่ 6: บริเวณอาคารใหม่", "lat": 14.134201, "lng": 100.617782, "desc": "เพิ่มใหม่จากแผนที่"},
+            {"id": 7, "name": "จุดจอดที่ 7: บริเวณอาคารใหม่", "lat": 14.132882, "lng": 100.609813, "desc": "เพิ่มใหม่จากแผนที่"},
+            {"id": 8, "name": "จุดจอดที่ 8: บริเวณอาคารใหม่", "lat": 14.132971, "lng": 100.608043, "desc": "เพิ่มใหม่จากแผนที่"},
+            {"id": 9, "name": "จุดจอดที่ 9: บริเวณอาคารใหม่", "lat": 14.134594, "lng": 100.610677, "desc": "เพิ่มใหม่จากแผนที่"},
+            {"id": 10, "name": "จุดจอดที่ 10: บริเวณอาคารใหม่", "lat": 14.134469, "lng": 100.608834, "desc": "เพิ่มใหม่จากแผนที่"}
+        ];
+
+        const REST_POINT = {
+            "name": "จุดพักรถราง (REST_POINT)",
+            "lat": 14.132854,
+            "lng": 100.610143,
+            "desc": "ตั้งค่าตำแหน่งจากแผนที่"
+        };
+
+        // ================= 2. เริ่มต้นสร้างแผนที่ (INITIALIZE MAP) =================
+        const map = L.map('map').setView([14.1336, 100.6125], 16);
+
+        // ดึงข้อมูลแผนที่จาก OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Custom Icons
+        const stopIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448339.png',
+            iconSize: [30, 30],
+            iconAnchor: [15, 30],
+            popupAnchor: [0, -28]
+        });
+
+        const restIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/2830/2830305.png',
+            iconSize: [34, 34],
+            iconAnchor: [17, 34],
+            popupAnchor: [0, -32]
+        });
+
+        const userIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -30]
+        });
+
+        // ================= 3. วาดเส้นทาง และ จุดปักหมุด =================
+        // วาด เส้นทางรถราง (ROUTE)
+        const routePolyline = L.polyline(ROUTE, {
+            color: '#2980b9',
+            weight: 5,
+            opacity: 0.8,
+            dashArray: '10, 5'
+        }).addTo(map);
+
+        // ปักหมุด จุดจอดรถราง (STOPS)
+        STOPS.forEach(stop => {
+            L.marker([stop.lat, stop.lng], { icon: stopIcon })
+                .addTo(map)
+                .bindPopup(`<div class="popup-title">${stop.name}</div><div class="popup-desc">${stop.desc}</div>`);
+        });
+
+        // ปักหมุด จุดพักรถ (REST_POINT)
+        L.marker([REST_POINT.lat, REST_POINT.lng], { icon: restIcon })
+            .addTo(map)
+            .bindPopup(`<div class="popup-title">🛑 ${REST_POINT.name}</div><div class="popup-desc">${REST_POINT.desc}</div>`);
+
+        // Adjust view to fit route
+        map.fitBounds(routePolyline.getBounds());
+
+        // ================= 4. ระบบติดตาม GPS ผู้ใช้ (LIVE GPS TRACKING) =================
+        let watchId = null;
+        let userMarker = null;
+        let accuracyCircle = null;
+        let isTracking = false;
+
+        function toggleGPS() {
+            const btn = document.getElementById('gpsBtn');
+            
+            if (!isTracking) {
+                if ("geolocation" in navigator) {
+                    btn.classList.add('active');
+                    btn.innerHTML = '<span>❌ ยกเลิกติดตาม GPS</span>';
+                    isTracking = true;
+
+                    watchId = navigator.geolocation.watchPosition(
+                        onGPSSuccess, 
+                        onGPSError, 
+                        {
+                            enableHighAccuracy: true,
+                            maximumAge: 2000,
+                            timeout: 5000
+                        }
+                    );
+                } else {
+                    alert("เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง GPS");
+                }
+            } else {
+                stopTracking();
+            }
+        }
+
+        function onGPSSuccess(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            // หากมี Marker เดิมให้ลบออกก่อน
+            if (userMarker) map.removeLayer(userMarker);
+            if (accuracyCircle) map.removeLayer(accuracyCircle);
+
+            // แสดงจุดตำแหน่งของผู้ใช้
+            userMarker = L.marker([lat, lng], { icon: userIcon })
+                .addTo(map)
+                .bindPopup(`<b>ตำแหน่งของคุณ</b><br>ความแม่นยำ: ±${Math.round(accuracy)} เมตร`);
+
+            // แสดงรัศมี ความแม่นยำ
+            accuracyCircle = L.circle([lat, lng], {
+                radius: accuracy,
+                color: '#e74c3c',
+                fillColor: '#e74c3c',
+                fillOpacity: 0.15
+            }).addTo(map);
+
+            // เลื่อนกล้องไปยังตำแหน่งปัจจุบันของผู้ใช้
+            map.setView([lat, lng], 17);
+        }
+
+        function onGPSError(error) {
+            alert("ไม่สามารถดึงตำแหน่ง GPS ได้: " + error.message);
+            stopTracking();
+        }
+
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            if (userMarker) map.removeLayer(userMarker);
+            if (accuracyCircle) map.removeLayer(accuracyCircle);
+
+            const btn = document.getElementById('gpsBtn');
+            btn.classList.remove('active');
+            btn.innerHTML = '<span>📍 ติดตาม GPS ของฉัน</span>';
+            isTracking = false;
+            
+            // Re-center back to route
+            map.fitBounds(routePolyline.getBounds());
+        }
+    </script>
+</body>
+</html>
